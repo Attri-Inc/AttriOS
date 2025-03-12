@@ -30,7 +30,7 @@ class AnthropicLLM(BaseLLM):
         }
         if self.use_system_prompt:
             # if the model support system prompt, extract and pass it
-            if messages[0]["role"] == "system":
+            if messages and len(messages) > 0 and messages[0]["role"] == "system":
                 kwargs["messages"] = messages[1:]
                 kwargs["system"] = messages[0]["content"]  # set system prompt here
         return kwargs

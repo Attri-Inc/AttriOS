@@ -16,11 +16,13 @@
 """
 
 import json
+from pathlib import Path
+from typing import Set
 
 from pydantic import Field
-from tenacity import retry, stop_after_attempt, wait_random_exponential
+from tenacity import retry, wait_random_exponential, stop_after_attempt
 
-from metagpt.actions.action import Action
+from metagpt.actions import Action
 from metagpt.actions.project_management_an import REFINED_TASK_LIST, TASK_LIST
 from metagpt.actions.write_code_plan_and_change_an import REFINED_TEMPLATE
 from metagpt.const import BUGFIX_FILENAME, REQUIREMENT_FILENAME
@@ -30,53 +32,56 @@ from metagpt.utils.common import CodeParser
 from metagpt.utils.project_repo import ProjectRepo
 
 PROMPT_TEMPLATE = """
-NOTICE
-Role: You are a professional engineer; the main goal is to write google-style, elegant, modular, easy to read and maintain code
-Language: Please use the same language as the user requirement, but the title and code should be still in English. For example, if the user speaks Chinese, the specific text of your answer should also be in Chinese.
-ATTENTION: Use '##' to SPLIT SECTIONS, not '#'. Output format carefully referenced "Format example".
+# File Generation Task
 
-# Context
-## Design
+You are generating exactly ONE file: {filename}
+
+## Project Structure
+The project has a specific structure:
+- Project root/ (e.g., projectname/)
+  - package.json (SINGLE package.json for the entire project)
+  - frontend/ (Contains all frontend code)
+  - backend/ (Contains all backend code)
+
+## CRITICAL INSTRUCTIONS
+
+1. Generate ONLY the file named: {filename}
+2. Place this file EXACTLY at the path shown - DO NOT create any nested directories
+3. Create complete, functional code - no placeholders
+4. Use RELATIVE imports within the project structure
+
+## IMPORTANT PATH RULES:
+- ✅ CORRECT: projectname/package.json
+- ✅ CORRECT: projectname/frontend/...
+- ✅ CORRECT: projectname/backend/...
+- ❌ WRONG: projectname/frontend/package.json
+- ❌ WRONG: projectname/backend/package.json
+- ❌ WRONG: projectname/frontend/frontend/...
+- ❌ WRONG: projectname/backend/backend/...
+
+## SPECIAL CASES:
+- If {filename} is "package.json", include ALL necessary dependencies for BOTH frontend and backend
+
+## Context for This File
+
+Design Information:
 {design}
 
-## Task
+Task Description:
 {task}
 
-## Legacy Code
-```Code
+Related Code:
+```
 {code}
 ```
 
-## Debug logs
-```text
+Debug Information:
+```
 {logs}
-
-{summary_log}
 ```
 
-## Bug Feedback logs
-```text
+Feedback:
 {feedback}
-```
-
-# Format example
-## Code: {filename}
-```python
-## {filename}
-...
-```
-
-# Instruction: Based on the context, follow "Format example", write code.
-
-## Code: {filename}. Write code with triple quoto, based on the following attentions and context.
-1. Only One file: do your best to implement THIS ONLY ONE FILE.
-2. COMPLETE CODE: Your code will be part of the entire project, so please implement complete, reliable, reusable code snippets.
-3. Set default value: If there is any setting, ALWAYS SET A DEFAULT VALUE, ALWAYS USE STRONG TYPE AND EXPLICIT VARIABLE. AVOID circular import.
-4. Follow design: YOU MUST FOLLOW "Data structures and interfaces". DONT CHANGE ANY DESIGN. Do not use public member functions that do not exist in your design.
-5. CAREFULLY CHECK THAT YOU DONT MISS ANY NECESSARY CLASS/FUNCTION IN THIS FILE.
-6. Before using a external variable/module, make sure you import it first.
-7. Write out EVERY CODE DETAIL, DON'T LEAVE TODO.
-
 """
 
 
@@ -88,7 +93,127 @@ class WriteCode(Action):
     async def write_code(self, prompt) -> str:
         code_rsp = await self._aask(prompt)
         code = CodeParser.parse_code(block="", text=code_rsp)
+        
+        # Check for nested directory patterns and alert
+        nested_patterns = [
+            "frontend/frontend/", 
+            "backend/backend/",
+            "/project_name/"
+        ]
+        for pattern in nested_patterns:
+            if pattern in code:
+                logger.warning(f"Detected potentially problematic nested path: {pattern} in the generated code")
+                # We'll let the ensure_critical_files method handle this
+        
         return code
+
+    async def ensure_critical_files(self, coding_context: CodingContext, project_repo: ProjectRepo) -> Set[str]:
+        added_files = set()
+        
+        # Define critical files and their minimal content - now a single package.json at project root
+        critical_files = {
+            "package.json": """{
+  "name": "project",
+  "version": "1.0.0",
+  "description": "A full-stack application",
+  "scripts": {
+    "start": "concurrently \\"npm run start:frontend\\" \\"npm run start:backend\\"",
+    "start:frontend": "cd frontend && react-scripts start",
+    "start:backend": "cd backend && node server.js",
+    "build": "cd frontend && react-scripts build",
+    "test": "cd frontend && react-scripts test",
+    "eject": "cd frontend && react-scripts eject"
+  },
+  "dependencies": {
+    "concurrently": "^7.6.0"
+  },
+  "frontend": {
+    "dependencies": {
+      "react": "^18.2.0",
+      "react-dom": "^18.2.0",
+      "react-scripts": "5.0.1"
+    }
+  },
+  "backend": {
+    "dependencies": {
+      "express": "^4.18.2",
+      "cors": "^2.8.5",
+      "body-parser": "^1.20.1"
+    }
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  }
+}"""
+        }
+        
+        # Find the project root directory
+        if coding_context.code_doc and coding_context.code_doc.root_relative_path:
+            # Get the absolute path to the workspace
+            workspace_path = Path(coding_context.code_doc.root_path)
+            
+            logger.info(f"Ensuring critical files in workspace: {workspace_path}")
+            
+            # Determine if there's a project directory
+            filename_parts = Path(coding_context.filename).parts
+            project_dir = workspace_path
+            
+            if len(filename_parts) > 0 and filename_parts[0] not in ['frontend', 'backend', 'package.json']:
+                # The first part is likely the project name
+                project_name = filename_parts[0]
+                project_dir = workspace_path / project_name
+                logger.info(f"Using project directory: {project_dir}")
+                
+                # Make sure frontend and backend directories exist
+                frontend_dir = project_dir / "frontend"
+                backend_dir = project_dir / "backend"
+                frontend_dir.mkdir(parents=True, exist_ok=True)
+                backend_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Create critical files at the project root
+            for file_path, content in critical_files.items():
+                # Construct the full path
+                full_path = project_dir / file_path
+                
+                # Ensure the directory exists
+                full_path.parent.mkdir(parents=True, exist_ok=True)
+                
+                # Check if file exists
+                file_exists = full_path.exists()
+                
+                if not file_exists:
+                    # Create the file
+                    try:
+                        # Save using the project repo
+                        await project_repo.srcs.save(
+                            filename=str(full_path),
+                            dependencies=list({coding_context.design_doc.root_relative_path, 
+                                            coding_context.task_doc.root_relative_path}),
+                            content=content,
+                        )
+                        added_files.add(str(full_path))
+                        logger.info(f"Created critical file: {full_path}")
+                    except Exception as e:
+                        logger.error(f"Failed to create critical file {full_path}: {e}")
+                        # Try direct file writing as a fallback
+                        try:
+                            with open(full_path, 'w') as f:
+                                f.write(content)
+                            added_files.add(str(full_path))
+                            logger.info(f"Created critical file (direct write): {full_path}")
+                        except Exception as e2:
+                            logger.error(f"Failed direct write for {full_path}: {e2}")
+        
+        return added_files
 
     async def run(self, *args, **kwargs) -> CodingContext:
         bug_feedback = await self.repo.docs.get(filename=BUGFIX_FILENAME)
@@ -138,13 +263,27 @@ class WriteCode(Action):
                 filename=self.i_context.filename,
                 summary_log=summary_doc.content if summary_doc else "",
             )
+        
         logger.info(f"Writing {coding_context.filename}..")
-        code = await self.write_code(prompt)
+        try:
+            code = await self.write_code(prompt)
+            logger.info(f"Generated code for {coding_context.filename}")
+        except Exception as e:
+            logger.error(f"Failed to generate code for {coding_context.filename}: {e}")
+            code = """"""
+
         if not coding_context.code_doc:
             # avoid root_path pydantic ValidationError if use WriteCode alone
             root_path = self.context.src_workspace if self.context.src_workspace else ""
             coding_context.code_doc = Document(filename=coding_context.filename, root_path=str(root_path))
         coding_context.code_doc.content = code
+        
+        # Ensure critical files like package.json are created
+        repo_with_src = self.repo.with_src_path(self.context.src_workspace)
+        added_files = await self.ensure_critical_files(coding_context, repo_with_src)
+        if added_files:
+            logger.info(f"Created critical files: {added_files}")
+        
         return coding_context
 
     @staticmethod

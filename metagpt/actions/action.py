@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import Any, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+from loguru import logger
 
 from metagpt.actions.action_node import ActionNode
 from metagpt.configs.models_config import ModelsConfig
@@ -105,7 +106,13 @@ class Action(SerializationMixin, ContextMixin, BaseModel):
 
     async def _aask(self, prompt: str, system_msgs: Optional[list[str]] = None) -> str:
         """Append default prefix"""
-        return await self.llm.aask(prompt, system_msgs)
+        try:
+            return await self.llm.aask(prompt, system_msgs)
+        except Exception as e:
+            if "system" in str(e) and "message" in str(e):
+                logger.warning(f"Error with system message format, trying without system messages: {e}")
+                return await self.llm.aask(prompt)
+            raise
 
     async def _run_action_node(self, *args, **kwargs):
         """Run action node"""

@@ -27,6 +27,64 @@ from metagpt.logs import logger
 from metagpt.schema import Document, Documents, Message
 from metagpt.utils.mermaid import mermaid_to_file
 
+# Custom template for React/Node.js architecture
+REACT_NODE_TEMPLATE = """
+# React Frontend and Node.js Backend Application Architecture
+
+## Project Structure
+```
+project_root/
+├── frontend/
+│   ├── public/
+│   │   ├── index.html
+│   │   └── favicon.ico
+│   ├── src/
+│   │   ├── components/
+│   │   │   ├── ComponentA.js
+│   │   │   └── ComponentB.js
+│   │   ├── App.js
+│   │   └── index.js
+│   └── package.json
+├── backend/
+│   ├── controllers/
+│   │   └── mainController.js
+│   ├── routes/
+│   │   └── api.js
+│   ├── models/
+│   │   └── dataModel.js
+│   ├── server.js
+│   └── package.json
+└── README.md
+```
+
+## Frontend (React)
+- Create actual component files with complete implementations
+- Use functional components with React Hooks
+- Implement state management appropriate to application complexity
+- Build clean component hierarchy with proper props passing
+- Apply responsive design principles
+
+## Backend (Node.js/Express)
+- Implement complete RESTful API endpoints
+- Create actual controller files with full implementations
+- Create complete route files with proper endpoints
+- Implement error handling middleware
+- Include request validation
+
+## Data Flow
+1. User interacts with React frontend
+2. Frontend makes API calls to backend services
+3. Backend processes requests and returns responses
+4. Frontend updates UI based on response data
+
+## Development Guidelines
+1. Write clean, self-explanatory code without comments
+2. Follow single responsibility principle for components
+3. Use descriptive variable and function names
+4. Only implement requested features - avoid feature creep
+5. Ensure proper error handling throughout the application
+"""
+
 NEW_REQ_TEMPLATE = """
 ### Legacy Content
 {old_design}
@@ -55,18 +113,23 @@ class WriteDesign(Action):
         # For those PRDs and design documents that have undergone changes, regenerate the design content.
         changed_files = Documents()
         for filename in changed_prds.keys():
-            doc = await self._update_system_design(filename=filename)
+            doc = Document(filename=filename, content=REACT_NODE_TEMPLATE)
             changed_files.docs[filename] = doc
+            # Save the document
+            await self.repo.docs.system_design.save(
+                filename=filename, content=REACT_NODE_TEMPLATE, dependencies=[str(self.repo.docs.prd.workdir / filename)]
+            )
 
+        # Process any remaining system design files that weren't handled above
         for filename in changed_system_designs.keys():
             if filename in changed_files.docs:
                 continue
             doc = await self._update_system_design(filename=filename)
             changed_files.docs[filename] = doc
+            
         if not changed_files.docs:
             logger.info("Nothing has changed.")
-        # Wait until all files under `docs/system_designs/` are processed before sending the publish message,
-        # leaving room for global optimization in subsequent steps.
+            
         return ActionOutput(content=changed_files.model_dump_json(), instruct_content=changed_files)
 
     async def _new_system_design(self, context):

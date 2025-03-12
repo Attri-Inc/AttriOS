@@ -86,6 +86,7 @@ TOKEN_COSTS = {
     "openai/o1-mini": {"prompt": 0.003, "completion": 0.012},
     "anthropic/claude-3-opus": {"prompt": 0.015, "completion": 0.075},
     "anthropic/claude-3.5-sonnet": {"prompt": 0.003, "completion": 0.015},
+    "anthropic/claude-3-7-sonnet-latest": {"prompt": 0.003, "completion": 0.015},
     "google/gemini-pro-1.5": {"prompt": 0.0025, "completion": 0.0075},  # for openrouter, end
     "deepseek-chat": {"prompt": 0.00014, "completion": 0.00028},
     "deepseek-coder": {"prompt": 0.00014, "completion": 0.00028},
@@ -286,6 +287,7 @@ TOKEN_MAX = {
     "openai/o1-mini": 128000,
     "anthropic/claude-3-opus": 200000,
     "anthropic/claude-3.5-sonnet": 200000,
+    "anthropic/claude-3-7-sonnet-latest": 200000,
     "google/gemini-pro-1.5": 4000000,
     "deepseek-chat": 32768,
     "deepseek-coder": 16385,

@@ -73,10 +73,15 @@ class Engineer(Role):
 
     name: str = "Alex"
     profile: str = "Engineer"
-    goal: str = "write elegant, readable, extensible, efficient code"
+    goal: str = "write elegant, readable JavaScript code (React frontend, Node.js backend) with no comments or docstrings"
     constraints: str = (
-        "the code should conform to standards like google-style and be modular and maintainable. "
-        "Use same language as user requirement"
+        "Structure the project with React frontend and Node.js backend with clear separation of concerns. "
+        "Use modern JavaScript syntax and functional components with hooks. "
+        "Create proper package.json files for easy npm installation and startup. "
+        "DO NOT include any comments in the code - write self-explanatory variable and function names instead. "
+        "Only implement features explicitly requested - avoid over-engineering. "
+        "Follow industry best practices for React and Node.js development. "
+        "Structure the code to be easily runnable with simple npm commands."
     )
     n_borg: int = 1
     use_code_review: bool = False
